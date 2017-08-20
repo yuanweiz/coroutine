@@ -4,8 +4,6 @@
 #include <memory>
 #include <vector>
 #include <ucontext.h>
-#include <string.h>
-#include <assert.h>
 class Coroutine;
 class Scheduler;
 
@@ -14,17 +12,12 @@ using CoroutineFunc = std::function<void(Scheduler*)>;
 class Coroutine{
 public:
     friend class Scheduler;
-    Coroutine(const CoroutineFunc & func, Scheduler* s)
-        :func_(func),s_(s)
-    {
-        status_ = READY;
-        idx_ = -1;
-    }
+    Coroutine(const CoroutineFunc & func, Scheduler* s);
+    ~Coroutine();
     bool dead(){return status_ == DEAD;}
-    //void yield();
     void resume();
-    //const CoroutineFunc & func(){return func_;}
 private:
+    static void deleter(Coroutine*);
     static void threadFunc(uint32_t, uint32_t);
     void saveStack(const void* src, size_t sz);
     enum { READY, SUSPEND, RUNNING, DEAD} status_;
@@ -32,23 +25,21 @@ private:
     ucontext_t ctx_;
     CoroutineFunc func_;
     Scheduler * s_;
-    size_t idx_; // to be used by Scheduler
-    //Coroutine(const CoroutineFunc&);
+    int idx_; // to be used by Scheduler
 };
 
 class Scheduler{
 public:
     friend class Coroutine;
-    Scheduler(){
-        running_ = nullptr;
-    }
-    Coroutine* createCoroutine(const CoroutineFunc& );
+    Scheduler();
+    using CoroutinePtr = std::unique_ptr<Coroutine, decltype(&Coroutine::deleter)>;
+    CoroutinePtr createCoroutine(const CoroutineFunc& );
     void yield();
     
 private:
     void setRunning(Coroutine* c);
     void remove(Coroutine*);
-    std::vector<std::unique_ptr<Coroutine>> coroutines_;
+    std::vector<Coroutine*> coroutines_;
     Coroutine* running_;
     const static int STACK_SIZE=1024*1024;
     char stack_[STACK_SIZE];

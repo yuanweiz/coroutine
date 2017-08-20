@@ -11,6 +11,7 @@ private:
 	std::string callstack_;
 };
 
+void backTrace(std::string& );
 class LogicError : private Exception {
 public:
 	explicit LogicError(const char*);
