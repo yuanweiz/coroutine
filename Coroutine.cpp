@@ -39,23 +39,28 @@ void Coroutine::resume()
     //s_->running_ = this;
     s_->setRunning(this);
     ucontext_t* main_ = &s_->main_;
-    void * ptr = main_->uc_stack.ss_sp;
-    auto sz = main_->uc_stack.ss_size;
-    ctx_.uc_stack.ss_sp = ptr;
-    ctx_.uc_stack.ss_size = sz;
     if (!stack_.empty()){
         //restore stack
+        LOG_DEBUG << "stack is non empty, try to restore stack";
         assert (status_ == SUSPEND);
-        auto dst = reinterpret_cast<uintptr_t>(ptr)+sz - stack_.size();
-        ::memcpy(reinterpret_cast<void*>(dst), stack_.data(),stack_.size());
+        union {
+            char * top;
+            uint64_t u64;
+        };
+        top = s_->stack_ + s_->STACK_SIZE;
+        u64-=stack_.size();
+        void* dst = top, *src=stack_.data();
+        LOG_VERBOSE << "memcpy("<<dst<<"," << src <<","<<stack_.size()<<")";
+        ::memcpy(dst, src ,stack_.size());
     }
     else {
+        assert(status_ == READY);
+        LOG_DEBUG << "Coroutine hasn't started yet, create a new one";
         union {
             uint64_t u64;
             uint32_t u32[2];
         };
         u64 = reinterpret_cast<uint64_t>(this);
-        assert(status_ == READY);
         LOG_DEBUG << "getcontext()";
         getcontext(&ctx_);
         ctx_.uc_stack.ss_sp = s_->stack_;
@@ -70,7 +75,9 @@ void Coroutine::resume()
 void Scheduler::yield()
 {
     LOG_TRACE<< "Scheduler::yield()";
+    LOG_DEBUG<< "switch from coroutine " << running_ << " to main";
     char dummy;
+    auto *co = running_;
     uintptr_t top =reinterpret_cast<uintptr_t>( stack_) + sizeof (stack_);
     uintptr_t sp =reinterpret_cast<uintptr_t>( &dummy);
     assert(top > sp);
@@ -80,7 +87,7 @@ void Scheduler::yield()
     running_->saveStack(reinterpret_cast<void*>(sp),sz);
     running_->status_ = Coroutine::SUSPEND;
     setRunning(nullptr);
-    ::swapcontext(&main_, &running_->ctx_);
+    ::swapcontext( &co->ctx_ , &main_);
 }
 
 void Scheduler::remove(Coroutine *c){
